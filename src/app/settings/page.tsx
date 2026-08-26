@@ -30,6 +30,7 @@ import {
 import { FEATURES } from '@/lib/menu';
 import { SectionsBlock } from '@/components/settings/SectionList';
 import { useSections, sectionMenuEntries, MAIN_SEC, inSection } from '@/lib/sectionStore';
+import { useCustomLinks, linkEntries, toInternalPath } from '@/lib/linkStore';
 import { useSiteDraft } from '@/lib/siteStore';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useCursorSettings, CursorState, CURSOR_STATE_LABEL } from '@/lib/cursorStore';
@@ -1922,6 +1923,8 @@ function MenuPane() {
   // 글에도 적용 (v2.0 사용자 요청) — 아래 applyVis 참조
   const { user } = useAuth();
   const [visBusy, setVisBusy] = useState(false);
+  // 「주소로는 열람 허용」을 켤 때 띄우는 확인 (v2.0 사용자 요청)
+  const [openAsk, setOpenAsk] = useState<(() => void) | null>(null);
   const [visAsk, setVisAsk] = useState(false);
   const [commSet, patchComm] = useCommSettings();
   const { boards, loaded: bLoaded, patchBoard } = useBoards();  // 추가 게시판 이름·자동 편입 동기화 + 권한
@@ -1930,7 +1933,8 @@ function MenuPane() {
   const saved = ms.tree ?? defaultTree();
   // 게시판 + 여러 개로 만든 섹션 — 메뉴가 아는 「추가 항목」 전체 (v2.0)
   const { map: secMap } = useSections();
-  const extraAll = [...boardEntries(boards), ...sectionMenuEntries(secMap)];
+  const { links, setLinks, add: addLink } = useCustomLinks();   // 커스텀 링크 (v2.0 사용자 요청)
+  const extraAll = [...boardEntries(boards), ...sectionMenuEntries(secMap), ...linkEntries(links)];
   const defLabel = (href: string) => menuLabelFor(href, extraAll) ?? href;
 
   // 드래프트 — 모든 편집(삭제 포함)은 SAVE를 눌러야 실제 메뉴에 반영 (v1.9 사용자 피드백)
@@ -2148,6 +2152,16 @@ function MenuPane() {
     return null;
   };
 
+  /* 「주소로는 열람 허용」 (v2.0 사용자 요청) — 메뉴·위젯에서는 감추되 들어오는 것만 열어 준다.
+     링크로만 돌릴 게시판을 만들려는 용도라, 켤 때 **주소를 아는 사람은 누구나 본다**는 점을
+     모달로 분명히 알린다(사용자 요청). 「전부 보임」에서는 이미 열려 있으므로 뜻이 없어 감춘다 */
+  const openChk = (v: MenuVis | undefined, open: boolean | undefined, onChange: (nv: boolean) => void) => (
+    (v ?? 'all') === 'all' ? null : (
+      <KCheck label={<span style={{ fontSize: 11 }}>주소로는 열람 허용</span>} checked={!!open}
+        onChange={nv => { if (nv) setOpenAsk(() => () => onChange(true)); else onChange(false); }} />
+    )
+  );
+
   // 공개범위 셀렉트 (v1.9) — 메뉴 자체 노출: 전부 / 비로그인 숨김 / 관리자만 (드래프트 — SAVE로 적용)
   const visSel = (v: MenuVis | undefined, onChange: (nv: MenuVis) => void) => (
     <KSelect minWidth={128} value={v ?? 'all'} onChange={nv => onChange(nv as MenuVis)}
@@ -2181,7 +2195,11 @@ function MenuPane() {
       {mtab === 'perm' ? (
         /* ---------- 권한 탭 — 메뉴 공개범위 + 메뉴별 권한 부속 ---------- */
         <div>
-          <div className="d">공개범위는 메뉴 노출만 제어(전부 보임 / 비로그인 숨김 / 관리자만) — SAVE를 눌러야 반영 · 글쓰기·댓글 권한은 즉시 반영</div>
+          <div className="d">
+            공개범위는 메뉴 노출을 정합니다(전부 보임 / 비로그인 숨김 / 관리자만) — SAVE를 눌러야 반영 · 글쓰기·댓글 권한은 즉시 반영
+            <br />
+            <b>주소로는 열람 허용</b>을 켜면 메뉴에서는 계속 감춰 두고 <b>주소를 아는 사람만 들어올 수 있는</b> 메뉴가 됩니다 — 링크로 돌릴 게시판에 씁니다
+          </div>
           {tree.map(g => (
             <div key={g.id} style={{ borderBottom: '1px dashed var(--line)', padding: '9px 0' }}>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -2189,7 +2207,8 @@ function MenuPane() {
                 {g.href && <small style={{ color: 'var(--faint)', fontSize: 10.5 }}>{g.href}</small>}
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   {g.href && extraPerm(g.href)}
-                  {visSel(g.vis, nv => patchGroup(g.id, { vis: nv === 'all' ? undefined : nv }))}
+                  {openChk(g.vis, g.open, nv => patchGroup(g.id, { open: nv || undefined }))}
+                  {visSel(g.vis, nv => patchGroup(g.id, { vis: nv === 'all' ? undefined : nv, ...(nv === 'all' ? { open: undefined } : {}) }))}
                 </div>
               </div>
               {!g.href && g.items.map(it => (
@@ -2198,8 +2217,12 @@ function MenuPane() {
                   <small style={{ color: 'var(--faint)', fontSize: 10.5 }}>{it.href}</small>
                   <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                     {extraPerm(it.href)}
+                    {openChk(it.vis, it.open, nv => patchGroup(g.id, {
+                      items: g.items.map(x => (x.href === it.href ? { ...x, open: nv || undefined } : x)),
+                    }))}
                     {visSel(it.vis, nv => patchGroup(g.id, {
-                      items: g.items.map(x => (x.href === it.href ? { ...x, vis: nv === 'all' ? undefined : nv } : x)),
+                      items: g.items.map(x => (x.href === it.href
+                        ? { ...x, vis: nv === 'all' ? undefined : nv, ...(nv === 'all' ? { open: undefined } : {}) } : x)),
                     }))}
                   </div>
                 </div>
@@ -2225,6 +2248,15 @@ function MenuPane() {
               </button>
             </div>
           </div>
+          {/* 「주소로는 열람 허용」 확인 (v2.0 사용자 요청) — 켜는 순간 무엇이 열리는지 분명히 */}
+          <ConfirmModal open={!!openAsk} title="주소가 있는 모두에게 공개됩니다"
+            body={'메뉴에서는 계속 감춰지지만, 이 주소를 아는 사람은 로그인하지 않아도 들어와 볼 수 있습니다. 링크를 받은 사람이 다른 곳에 옮겨 적으면 그 사람들도 볼 수 있습니다. 정말 알려지면 안 되는 내용에는 쓰지 마세요.'}
+            onClose={() => setOpenAsk(null)}
+            buttons={[
+              { label: 'CANCEL', kind: 'ghost', onClick: () => setOpenAsk(null) },
+              { label: '알겠습니다', kind: 'dark', onClick: () => { openAsk?.(); setOpenAsk(null); } },
+            ]} />
+
           <ConfirmModal open={visAsk} title="글 공개범위를 서버에 적용할까요?"
             body={'비공개로 둔 메뉴의 글이 서버에서도 가려집니다. 각 글의 공개범위가 바뀌므로, 되돌리려면 글마다 직접 고쳐야 합니다.'}
             onClose={() => setVisAsk(false)}
@@ -2333,6 +2365,44 @@ function MenuPane() {
       ))}
       {unplaced.length === 0 && (
         <div style={{ padding: '10px 0', fontSize: 12, color: 'var(--faint)' }}>모든 기능이 메뉴에 배치되어 있습니다</div>
+      )}
+
+      {/* 커스텀 링크 (v2.0 사용자 요청) — 사이트 안의 아무 페이지나 메뉴로.
+          만들면 위 미배치 목록에 나타나고, 거기서 원하는 상위 메뉴에 넣는다 */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 22 }}>
+        <h3 style={{ margin: 0 }}>커스텀 링크</h3>
+        <button className="btn btn-ghost" style={{ padding: '4px 11px', fontSize: 10.5, marginLeft: 'auto' }}
+          onClick={addLink}>＋ ADD CUSTOM</button>
+      </div>
+      <div className="d">
+        자관·캐릭터처럼 목록에서 골라야 갈 수 있던 페이지를 메뉴에서 바로 — 주소를 적어 두면 됩니다.
+        <br />
+        풀주소를 붙여 넣어도 <b>사이트 안 이동</b>으로 바뀝니다(예: <code>…/rels/latte</code> → <code>/rels/latte</code>).
+        만든 링크는 위 <b>미배치</b>에 나타나며, 거기서 원하는 상위 메뉴에 넣어 주세요.
+      </div>
+      {links.map(l => (
+        <div key={l.id} className="set-row">
+          <div className="l" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <KInput value={l.name} placeholder="메뉴에 보일 이름"
+              onChange={e => setLinks(links.map(x => (x.id === l.id ? { ...x, name: e.target.value } : x)))}
+              style={{ width: 140 }} />
+            <KInput value={l.href} placeholder="/rels/latte 또는 풀주소"
+              onChange={e => setLinks(links.map(x => (x.id === l.id ? { ...x, href: e.target.value } : x)))}
+              onBlur={e => setLinks(links.map(x => (x.id === l.id ? { ...x, href: toInternalPath(e.target.value) } : x)))}
+              style={{ width: 260 }} />
+          </div>
+          <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 10.5 }}
+            onClick={() => del.ask(`커스텀 링크 「${l.name}」를 지우시겠습니까?`,
+              () => {
+                setLinks(links.filter(x => x.id !== l.id));
+                // 메뉴에 배치돼 있었으면 그 자리도 함께 비운다 — 없는 주소가 남으면 눌러도 아무 일도 안 난다
+                setTree(tree.map(g => ({ ...g, items: g.items.filter(i => i.href !== l.href) })).filter(g => g.href !== l.href));
+              },
+              '메뉴에 배치해 두었다면 그 자리도 함께 비워집니다. 가리키던 페이지 자체는 그대로입니다.')}>DELETE</button>
+        </div>
+      ))}
+      {links.length === 0 && (
+        <div style={{ padding: '10px 0', fontSize: 12, color: 'var(--faint)' }}>아직 없습니다 — ＋ ADD CUSTOM으로 만들어 주세요</div>
       )}
       </>
       )}
