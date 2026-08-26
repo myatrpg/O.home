@@ -16,7 +16,7 @@ import { DiaryPost, DIARY_SEED } from '@/lib/diaryStore';
 import { newId } from '@/lib/postStore';
 import { useCommSettings, badgeStyle, CommBadge, CommSettings } from '@/lib/commStore';
 import {
-  useBoardSettings, boardBadgeStyle, BoardBadge,
+  useBoardSettings, boardBadgeStyle, BoardBadge, galleryCatsOf,
   useBoards, Board, BoardSkin, BoardPerm, DEFAULT_BOARD_CATS, MAIN_BOARD_ID,
 } from '@/lib/boardStore';
 import { useThreadSettings, ThreadWork, THREAD_SEED, ThreadCat, threadBadgeStyle, threadCats, threadCatsPatch } from '@/lib/threadStore';
@@ -653,6 +653,13 @@ function BoardPane() {
   } = useBoardSettings();
   const { boards, setBoards, patchBoard } = useBoards();
   const [catBoard, setCatBoard] = useState(MAIN_BOARD_ID);   // 말머리 편집 대상 게시판
+  /* 갤러리 말머리도 갤러리마다 따로 (v2.0 사용자 요청) — 어느 갤러리 것을 고칠지 고른다.
+     하나뿐이면 고를 것이 없으니 선택 줄을 아예 두지 않는다 (감상타래와 같은 방식) */
+  const { list: secList } = useSections();
+  const galSecs = secList('gallery');
+  const [galSecSel, setGalSec] = useState(MAIN_SEC);
+  const galSec = galSecs.some(s2 => s2.id === galSecSel) ? galSecSel : MAIN_SEC;
+  const galCats = galleryCatsOf(st, galSec);
   const del = useConfirmDelete();
 
   const sel = boards.find(b => b.id === catBoard) ?? boards[0];
@@ -781,10 +788,21 @@ function BoardPane() {
         </div>
       ))}
 
-      {/* 갤러리 말머리 (v2.0 사용자 요청) — 예전에는 코드에 박혀 있어 바꿀 수 없었다 */}
+      {/* 갤러리 말머리 (v2.0 사용자 요청) — 예전에는 코드에 박혀 있어 바꿀 수 없었다.
+          여러 개로 만든 갤러리마다 따로 정한다 (v2.0 사용자 요청) */}
       <h3 style={{ marginTop: 20 }}>갤러리 말머리</h3>
-      <div className="d">그림백업 글쓰기에서 고르는 말머리 — ⠿ 드래그로 순서 · 추가·수정·삭제 자유</div>
-      <DragList items={st.galleryCats} keyOf={c => c.id} onReorder={setGalleryCats}
+      <div className="d">
+        그림백업 글쓰기에서 고르는 말머리 — ⠿ 드래그로 순서 · 추가·수정·삭제 자유
+        {galSecs.length > 1 && <><br />갤러리마다 따로 정합니다 — <b>손대기 전까지는 기본 갤러리의 말머리를 그대로 씁니다</b></>}
+      </div>
+      {galSecs.length > 1 && (
+        <div className="mini-seg" style={{ flexWrap: 'wrap', marginBottom: 10 }}>
+          {galSecs.map(s2 => (
+            <button key={s2.id} className={galSec === s2.id ? 'on' : ''} onClick={() => setGalSec(s2.id)}>{s2.name}</button>
+          ))}
+        </div>
+      )}
+      <DragList items={galCats} keyOf={c => c.id} onReorder={next => setGalleryCats(galSec, next)}
         render={c => (
           <div className="set-row" style={{ width: '100%' }}>
             <div className="l" style={{ display: 'flex', gap: 11, alignItems: 'center' }}>
@@ -792,18 +810,18 @@ function BoardPane() {
               <span style={boardBadgeStyle(c)}>{c.label || '말머리'}</span>
             </div>
             <div className="cp-group" style={{ justifyContent: 'flex-end' }}>
-              <KInput value={c.label} onChange={e => patchGalleryCat(c.id, { label: e.target.value })}
+              <KInput value={c.label} onChange={e => patchGalleryCat(galSec, c.id, { label: e.target.value })}
                 style={{ width: 100, textAlign: 'right' }} />
-              {colorCells(c, p => patchGalleryCat(c.id, p))}
+              {colorCells(c, p => patchGalleryCat(galSec, c.id, p))}
               <span className="fx" data-tip="말머리 삭제"
                 onClick={() => del.ask(`말머리 「${c.label}」를 삭제하시겠습니까?`,
-                  () => removeGalleryCat(c.id),
+                  () => removeGalleryCat(galSec, c.id),
                   '이미 이 말머리로 등록된 글은 그대로 남습니다.')}>✕</span>
             </div>
           </div>
         )} />
       <button className="btn btn-ghost" style={{ marginTop: 8, padding: '7px 14px', fontSize: 11 }}
-        onClick={addGalleryCat}>＋ 말머리 추가</button>
+        onClick={() => addGalleryCat(galSec)}>＋ 말머리 추가</button>
 
       <hr style={{ margin: '24px 0', border: 'none', borderTop: '1.5px solid var(--line)' }} />
       {/* 갤러리·다이어리 등도 여러 개로 (v2.0 사용자 요청) — 목록이 몇 개인지는 여기 한곳에서 */}
@@ -1989,7 +2007,8 @@ function MenuPane() {
     setTimeout(() => el?.click(), 30);   // 보류했던 클릭 재실행 → 원래 목적지로
   };
 
-  // 트리 정규화(저장본 대상) — 사라진 기능(삭제된 게시판) 제거 + 새 게시판을 /board가 든 그룹에 자동 편입
+  /* 트리 정규화(저장본 대상) — 사라진 기능(삭제된 게시판) 제거.
+     **새로 만든 것을 자동으로 넣지는 않는다** (v2.0 사용자 확정) — 미배치에 머물게 둔다 */
   useEffect(() => {
     if (!msLoaded || !bLoaded) return;
     let next: MenuGroupNode[] = saved
@@ -1997,19 +2016,6 @@ function MenuPane() {
         ? (menuLabelFor(g.href, extraAll) === null ? null : g)
         : { ...g, items: g.items.filter(it => menuLabelFor(it.href, extraAll) !== null) }))
       .filter((g): g is MenuGroupNode => !!g);
-    const placed = new Set(next.flatMap(g => (g.href ? [g.href] : g.items.map(i => i.href))));
-    for (const b of extraAll) {
-      const href = b.href;
-      if (placed.has(href) || ms.removedBoards.includes(href)) continue;
-      const hi = next.findIndex(g => !g.href && g.items.some(i => i.href === b.anchor));
-      if (hi >= 0) {
-        const at = next[hi].items.findIndex(i => i.href === b.anchor);
-        next = next.map((g, i) => (i === hi
-          ? { ...g, items: [...g.items.slice(0, at + 1), { href }, ...g.items.slice(at + 1)] } : g));
-      } else {
-        next = [...next, { id: newGroupId(), label: b.name, href, items: [] }];
-      }
-    }
     if (JSON.stringify(next) !== JSON.stringify(saved)) patch({ tree: next });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [msLoaded, bLoaded, boards, ms.tree]);
@@ -2018,8 +2024,8 @@ function MenuPane() {
   const placedSet = new Set(tree.flatMap(g => (g.href ? [g.href] : g.items.map(i => i.href))));
   const unplaced = [
     ...FEATURES.filter(f => !placedSet.has(f.href)),
-    // 게시판·갤러리·다이어리 등 여러 개로 만든 것도 여기 뜬다 (v2.0 사용자 요청) —
-    // 자동 배치된 자리가 마음에 안 들면 빼서 원하는 상위 메뉴로 다시 넣을 수 있다
+    // 게시판·갤러리·다이어리 등 여러 개로 만든 것도 여기 뜬다 (v2.0 사용자 요청).
+    // 자동 배치를 없앴으므로 **만들면 여기 머문다** — 원하는 상위 메뉴에 직접 넣는다
     ...extraAll.map(b => ({ href: b.href, label: b.name })).filter(x => !placedSet.has(x.href)),
   ];
 
@@ -2075,7 +2081,7 @@ function MenuPane() {
   // 메뉴별 부속 설정 — 기본 탭용 (표시 방식 등)
   const extraFor = (href: string) => {
     switch (href) {
-      case '/backup': return (
+      case '/gallery': return (
         <div className="mini-seg">
           <button className={ms.backupView === 'gal' ? 'on' : ''} onClick={() => patch({ backupView: 'gal' })}>기본: 갤러리</button>
           <button className={ms.backupView === 'list' ? 'on' : ''} onClick={() => patch({ backupView: 'list' })}>기본: 리스트</button>
@@ -2131,7 +2137,7 @@ function MenuPane() {
         </>
       );
     }
-    if (href === '/roadview') {
+    if (href === '/loadb') {
       return (
         <>
           {permSel('업로드', ms.roadUpload, v => patch({ roadUpload: v }))}
@@ -2764,7 +2770,7 @@ function BgmPane() {
 
 /** 폰트 목록 한 줄 — CSS URL 표시 · 수정(이름/family/URL, 업로드 폰트는 이름/한글 페어) · 삭제 */
 function FontRow({ f }: { f: FontDef }) {
-  const { fonts, updateFont, removeFont, setFontPair } = useFonts();
+  const { fonts, familyOf, updateFont, removeFont, resetFont, setFontPair } = useFonts();
   const del = useConfirmDelete();
   const toast = useToast();
   const [editing, setEditing] = useState(false);
@@ -2805,6 +2811,16 @@ function FontRow({ f }: { f: FontDef }) {
               if (updateFont(f.id, { name, family: f.fileId ? f.family : family, cssUrl: f.fileId ? '' : cssUrl })) { setEditing(false); toast('폰트가 수정되었습니다'); }
               else toast('이름과 font-family 값을 입력해 주세요');
             }}>SAVE</button>
+          {/* 내장 폰트를 처음 상태로 (v2.0 사용자 발견) — 이름·family·한글 페어를 한꺼번에 되돌린다.
+              잘못 들어간 값(엉뚱한 family, 지워진 폰트를 가리키는 페어)을 풀 방법이 없었다 */}
+          {f.builtin && (
+            <button className="btn btn-ghost" style={{ whiteSpace: 'nowrap' }}
+              onClick={() => {
+                resetFont(f.id);
+                setEditing(false);
+                toast(`「${f.name}」를 처음 상태로 되돌렸습니다`);
+              }}>기본값으로</button>
+          )}
           <button className="btn btn-ghost" style={{ whiteSpace: 'nowrap' }}
             onClick={() => { setEditing(false); setName(f.name); setFamily(f.family); setCssUrl(fontCssUrl(f) ?? ''); }}>CANCEL</button>
         </div>
@@ -2816,7 +2832,8 @@ function FontRow({ f }: { f: FontDef }) {
     <div className="set-row">
       <div className="l" style={{ minWidth: 0 }}>
         {/* 미리보기는 페어 반영 스택 — 영문 폰트+한글 페어면 한글이 페어 폰트로 보임 (v1.9) */}
-        <b style={{ fontFamily: f.pairId ? `${f.family}, ${fonts.find(x => x.id === f.pairId)?.family ?? ''}` : f.family, fontSize: 15 }}>{f.name} — 가나다 ABC 123</b>
+        {/* familyOf가 페어까지 합쳐 주고 var(--serif) 같은 별칭도 원본 스택으로 풀어 준다 (v2.0) */}
+        <b style={{ fontFamily: familyOf(f.id), fontSize: 15 }}>{f.name} — 가나다 ABC 123</b>
         <small style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {f.fileId
             ? `업로드 파일 — ${f.fileName ?? '폰트 파일'}${f.pairId ? ` · 한글 페어: ${fonts.find(x => x.id === f.pairId)?.name ?? ''}` : ''}`
@@ -2829,7 +2846,10 @@ function FontRow({ f }: { f: FontDef }) {
         {!f.locked && (
           <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: 10.5 }}
             onClick={() => del.ask(`폰트 「${f.name}」를 삭제하시겠습니까?`, () => removeFont(f.id),
-                f.builtin ? '기본 폰트는 아래 [복원] 버튼으로 되살릴 수 있습니다.' : '직접 등록한 폰트는 복구할 수 없습니다. 이 폰트를 쓰던 항목 표시는 유지됩니다.')}>DELETE</button>
+                f.builtin
+                  ? '기본 폰트는 목록에서만 빠집니다 — 아래 [복원] 버튼으로 되살릴 수 있고, 이 폰트를 쓰던 항목 표시는 그대로입니다.'
+                  // 직접 등록한 폰트는 정의째 사라지므로 가리키던 자리도 함께 정리된다 (v2.0)
+                  : '직접 등록한 폰트는 복구할 수 없습니다. 이 폰트를 쓰도록 지정해 둔 자리(역할 폰트·한글 페어)는 기본값으로 되돌아갑니다.')}>DELETE</button>
         )}
       </div>
       {del.element}
@@ -2944,8 +2964,17 @@ function SettingsInner() {
     return () => mq.removeEventListener('change', f);
   }, []);
 
-  // 테마 미리보기는 이 페이지 안에서만 — SAVE 없이 벗어나면 저장본으로 원복 (v1.9)
-  const { dirty, discard, save } = useTheme();
+  /* 미리보기는 이 페이지 안에서만 — SAVE 없이 벗어나면 저장본으로 원복 (v1.9).
+     **색만 지키고 있었다** (v2.0 사용자 발견 — 「폰트 바꾸고 SAVE 안 했는데 화면 전환이 되고
+     적용돼 있어」). 디자인 탭의 SAVE는 색·역할 폰트·로고/탭 제목 **셋**을 함께 저장하는데,
+     이탈 경고와 원복은 색(useTheme)만 보고 있었다. 나머지 둘은 모듈·프로바이더에 사는
+     드래프트라 페이지를 떠나도 사라지지 않아, 저장한 것처럼 계속 적용된 채로 남았다. */
+  const { dirty: themeDirty, discard: themeDiscard, save: themeSave } = useTheme();
+  const { rolesDirty, saveRoles, discardRoles } = useFonts();
+  const siteDraft = useSiteDraft();
+  const dirty = themeDirty || rolesDirty || siteDraft.dirty;
+  const save = () => { themeSave(); saveRoles(); siteDraft.save(); };
+  const discard = () => { themeDiscard(); discardRoles(); siteDraft.discard(); };
   const themeRef = useRef({ dirty, discard });
   themeRef.current = { dirty, discard };
   useEffect(() => () => { if (themeRef.current.dirty) themeRef.current.discard(); }, []);
