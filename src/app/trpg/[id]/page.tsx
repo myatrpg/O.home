@@ -22,7 +22,9 @@ function LogFrame({ frameRef, html, title, onFrameLoad }: {
   frameRef: React.RefObject<HTMLIFrameElement | null>; html: string; title: string;
   onFrameLoad: () => void;
 }) {
-  const url = useMemo(() => URL.createObjectURL(new Blob([html], { type: 'text/html' })), [html]);
+  // charset을 MIME에 명시 (v2.0) — 로그 파일의 <meta charset>은 주입 스크립트에 밀려 브라우저가
+  // 인코딩을 찾아보는 앞부분 1024바이트 밖으로 나갈 수 있다. 그러면 브라우저에 따라 본문이 깨진다
+  const url = useMemo(() => URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' })), [html]);
   useEffect(() => () => URL.revokeObjectURL(url), [url]);
   return (
     <iframe
@@ -172,7 +174,9 @@ export default function TrpgDetailPage() {
       visibility: bodyVisibility(nextLog),
       ...secStamp(nextLog.secId ?? MAIN_SEC),   // 소속 (v2.0) — 본문 문서도 비공개 판정을 받게
     };
-    setBodies(bd ? bodies.map(x => x.id === id ? nextBody : x) : [nextBody, ...bodies]);
+    // 새 본문 문서는 뒤에 붙인다 (v2.0 포크 제보) — 앞에 끼우면 기존 본문 전체의 자리가 밀려
+    // 재저장 대상이 되고, 큰 본문이 쌓인 홈에서는 그 합이 쓰기 한도를 넘어 저장이 실패했다
+    setBodies(bd ? bodies.map(x => x.id === id ? nextBody : x) : [...bodies, nextBody]);
     if (bodyMode !== 'keep') setBodyText(null); // 본문 다시 로드
     setEOpen(false);
     setBodyMode('keep'); setEFile(null); setEText('');
@@ -181,12 +185,16 @@ export default function TrpgDetailPage() {
   };
 
   // 본문 로드 — 분리 저장된 본문(bd) 우선, 없으면 구버전 로그의 내장 본문(l.body/bodyId)로 fallback (v2.0)
+  const [bodyFailed, setBodyFailed] = useState(false);   // 본문 파일을 읽지 못함 (아래 원본 파일 fallback)
   useEffect(() => {
     if (!l) return;
     const src = bd ?? l;   // bd가 없으면(아직 분리 전인 구버전 로그) l 자신에서 읽는다
+    setBodyFailed(false);
     if (src.body) { setBodyText(src.body); return; }
     if (src.bodyId) {
-      getBlob(src.bodyId).then(async b => setBodyText(b ? await b.text() : ''));
+      getBlob(src.bodyId)
+        .then(async b => { if (b) setBodyText(await b.text()); else { setBodyText(''); setBodyFailed(true); } })
+        .catch(() => { setBodyText(''); setBodyFailed(true); });
     } else setBodyText('');
   }, [l, bd]);
 
@@ -251,6 +259,9 @@ export default function TrpgDetailPage() {
   // 원본 파일도 분리 저장된 쪽 우선, 없으면 구버전 로그의 내장 값 (v2.0)
   const origFileId = bd?.originalFileId ?? l.originalFileId;
   const origName = bd?.originalName ?? l.originalName;
+  // 본문이 없을 때 대신 띄울 수 있는 서버 파일 주소 (v2.0 포크 제보 — 본문 저장 실패 대비)
+  const fallbackUrl = [bd?.bodyId, l.bodyId, origFileId]
+    .find(x => typeof x === 'string' && /^https?:/.test(x));
   // iframe 기본 body 마진 제거(흰 테두리 방지) + 높이 리포터 주입
   // 크리스탈리아/크릿 계열 로그는 본문을 JS로 그리므로 스크립트 실행이 필요 —
   // 널 오리진 샌드박스(allow-scripts만)라 사이트 쿠키·DOM 접근은 불가 (6.3의 격리 목적 유지)
@@ -261,7 +272,9 @@ export default function TrpgDetailPage() {
   // 스크롤 요소라 `body.scrollHeight`가 **최소한 뷰포트(=지금 iframe 높이)**를 돌려준다.
   // 그러면 리포터가 자기 프레임 높이를 그대로 되읽어 「어긋난 높이가 스스로를 정당화」한다 —
   // 한 번 크게 잡히면 영영 줄지 않는다. 아래 injectAfterDoctype가 doctype 바로 뒤에 끼워 넣는다.
-  const inject = `<script>
+  // <meta charset>도 함께 주입 — decodeLogText가 이미 문자열로 만들었으므로 Blob은 언제나 UTF-8이다.
+  // 원본 문서의 charset 선언(euc-kr 등)이 뒤에 남아 있어도 먼저 온 선언이 이긴다
+  const inject = `<meta charset="utf-8"><script>
 // 널 오리진에서 localStorage 접근이 예외를 던져 로그 스크립트가 죽는 것 방지 (무동작 심)
 try{void window.localStorage}catch(e){var __m={getItem:function(){return null},setItem:function(){},removeItem:function(){},clear:function(){},key:function(){return null},length:0};
 try{Object.defineProperty(window,'localStorage',{value:__m});Object.defineProperty(window,'sessionStorage',{value:__m});}catch(e2){}}
@@ -347,7 +360,23 @@ html,body{margin:0!important;padding:0!important;height:auto!important;min-heigh
         ) : (
           body
             ? <div className="log-plain">{body}</div>
-            : <p className="hint">본문이 비어 있습니다 — 이전 버전에서 등록된 항목이면 삭제 후 다시 등록해 주세요</p>
+            : fallbackUrl
+              /* 본문 문서가 없거나 못 읽어도, 보관된 원본 파일이 서버에 있으면 그걸 그대로 보여 준다
+                 (v2.0 포크 제보 — 본문 저장이 실패한 로그도 원본만 있으면 읽을 수 있게).
+                 주입이 없어 높이 자동 맞춤은 안 되지만 기본 높이(65vh) 안에서 스크롤로 읽힌다 */
+              ? (
+                <>
+                  <iframe className="log-frame" sandbox="allow-scripts" src={fallbackUrl} title={l.title} />
+                  <p className="hint" style={{ marginTop: 6 }}>본문 문서를 불러오지 못해 보관된 원본 파일로 표시하고 있습니다 — 수정 화면에서 본문을 다시 저장하면 원래대로 돌아갑니다</p>
+                </>
+              )
+              : (
+                <p className="hint">
+                  {bodyFailed
+                    ? '본문 파일을 불러오지 못했습니다 — 새로고침해도 계속되면 수정 화면에서 본문을 다시 등록해 주세요'
+                    : '본문이 비어 있습니다 — 이전 버전에서 등록된 항목이면 삭제 후 다시 등록해 주세요'}
+                </p>
+              )
         )}
         {/* 설명문 없이 원본 파일 다운로드 링크만 (4.3 백업) */}
         <p className="hint" style={{ marginTop: 10 }}>
