@@ -260,6 +260,21 @@ export default function RelDetailPage() {
       window.removeEventListener('keydown', key);
     };
   }, [tlCtx]);
+  // 질문 우클릭 메뉴 (v2.0 사용자 요청) — 바로 되돌리지 않고 메뉴를 거쳐 확인 모달로
+  const [qaCtx, setQaCtx] = useState<{ x: number; y: number; no: number } | null>(null);
+  useEffect(() => {
+    if (!qaCtx) return;
+    const close = () => setQaCtx(null);
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setQaCtx(null); };
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', key);
+    };
+  }, [qaCtx]);
   // 답변 우클릭 메뉴 (v2.0) — 수정·부연·삭제
   const [ansCtx, setAnsCtx] = useState<{ x: number; y: number; idx: number } | null>(null);
   useEffect(() => {
@@ -1200,11 +1215,12 @@ export default function RelDetailPage() {
               </div>
               <div className="qa-scroll">
                 {qaFiltered.map(q => (
-                  /* 우클릭 — 이 질문을 대기 리스트로 되돌린다 (v2.0 사용자 요청).
+                  /* 우클릭 — 메뉴에서 「리스트로 되돌리기」를 고르면 확인 모달이 뜬다 (v2.0 사용자 요청 —
+                     바로 모달이 뜨는 것보다 한 단계 거치는 쪽이 실수로 우클릭했을 때 안전하다).
                      지금 보고 있는 질문이 아니어도 리스트에서 바로 고를 수 있다 */
                   <div key={q.no} className={`qa-item ${curQa?.no === q.no ? 'on' : ''}`} onClick={() => setQaNo(q.no)}
                     data-tip={isAdmin ? '우클릭 — 리스트로 되돌리기' : undefined}
-                    onContextMenu={e => { if (!isAdmin) return; e.preventDefault(); returnQuestion(q); }}>
+                    onContextMenu={e => { if (!isAdmin) return; e.preventDefault(); setQaCtx({ x: e.clientX, y: e.clientY, no: q.no }); }}>
                     <b>Q.{String(q.no).padStart(3, '0')} {q.q}</b>
                     <small>{q.date.slice(5).replace('-', '.')} · 답변 {answersOf(q.no).length}</small>
                   </div>
@@ -1515,6 +1531,19 @@ export default function RelDetailPage() {
             del.ask('타임라인 항목을 삭제하시겠습니까?',
               () => patchAuData({ timeline: auTimeline.filter((_, j) => j !== i) }));
           }}>삭제</button>
+        </div>,
+        document.body,
+      )}
+
+      {/* 질문 우클릭 메뉴 (v2.0 사용자 요청) — 여기서 골라야 확인 모달이 뜬다 */}
+      {qaCtx && createPortal(
+        <div className="ctx-menu on" style={{ left: qaCtx.x, top: qaCtx.y }} onClick={e => e.stopPropagation()}>
+          <div className="ctx-ttl">Q.{String(qaCtx.no).padStart(3, '0')}</div>
+          <button className="danger" onClick={() => {
+            const q = auQuestions.find(x => x.no === qaCtx.no);
+            setQaCtx(null);
+            if (q) returnQuestion(q);
+          }}>리스트로 되돌리기</button>
         </div>,
         document.body,
       )}

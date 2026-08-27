@@ -2,6 +2,7 @@
 // 감상타래 (4.17) — 본 것·읽은 것의 감상을 트위터식 타래로.
 // 보기 2종(타래/리스트, 기본 보기는 환경설정) · 분류 필터 · 작품명 검색 · 이어쓰기 컴포저
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useSectionParam, filterSection, sectionSetter, secQuery } from '@/lib/sectionStore';
@@ -108,6 +109,21 @@ function ThreadsPageInner() {
 
   // 댓글 — 글과 따로 저장 (v2.0 사용자 요청, 게시판·로드비와 같은 컬렉션을 target으로 나눠 쓴다)
   const [cmtRows, setCmtRows] = useLocalList<CommentRow>(COMMENT_KEY, COMMENT_SEED);
+  // 타래 우클릭 메뉴 (v2.0 사용자 요청) — 바로 삭제 모달을 띄우지 않고 메뉴를 한 단계 거친다
+  const [wCtx, setWCtx] = useState<{ x: number; y: number; id: string } | null>(null);
+  useEffect(() => {
+    if (!wCtx) return;
+    const close = () => setWCtx(null);
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') setWCtx(null); };
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', key);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', key);
+    };
+  }, [wCtx]);
   // 접기 해제한 글 (v2.0 스포일러 쿠션) — 이 화면에 있는 동안만 기억한다
   const [openFolds, setOpenFolds] = useState<Set<string>>(new Set());
 
@@ -262,8 +278,8 @@ function ThreadsPageInner() {
           {visible.map(w => (
             <div key={w.id} className="panel thr-card"
               onClick={() => { setSelId(w.id); setView('thread'); }}
-              /* 우클릭으로 삭제 (v2.0 사용자 요청) — 리스트 보기에는 삭제 버튼이 없었다 */
-              onContextMenu={e => { if (!isAdmin) return; e.preventDefault(); removeWork(w); }}>
+              /* 우클릭 → 메뉴 → 삭제 확인 모달 (v2.0 사용자 요청) — 리스트 보기에는 삭제 버튼이 없었다 */
+              onContextMenu={e => { if (!isAdmin) return; e.preventDefault(); setWCtx({ x: e.clientX, y: e.clientY, id: w.id }); }}>
               <div className="th">
                 <CroppedBlobImg fileRef={w.posterId} crop={w.posterCrop} ph={w.ph} />
                 <span className="pill dark" style={threadBadgeStyle(cats.find(c => c.id === w.catId))}>
@@ -427,8 +443,8 @@ function ThreadsPageInner() {
           <div className="panel" style={{ padding: 10 }}>
             {visible.map(w => (
               <div key={w.id} className={`thr-item ${sel?.id === w.id ? 'on' : ''}`} onClick={() => setSelId(w.id)}
-                /* 우클릭으로 삭제 (v2.0 사용자 요청) — 타래 보기의 오른쪽 카드에서도 */
-                onContextMenu={e => { if (!isAdmin) return; e.preventDefault(); removeWork(w); }}>
+                /* 우클릭 → 메뉴 → 삭제 확인 모달 (v2.0 사용자 요청) — 타래 보기의 오른쪽 카드에서도 */
+                onContextMenu={e => { if (!isAdmin) return; e.preventDefault(); setWCtx({ x: e.clientX, y: e.clientY, id: w.id }); }}>
                 <div className="th">
                   <CroppedBlobImg fileRef={w.posterId} crop={w.posterCrop} ph={w.ph} />
                 </div>
@@ -488,6 +504,20 @@ function ThreadsPageInner() {
           </div>
         </div>
       </Modal>
+      {/* 타래 우클릭 메뉴 (v2.0 사용자 요청) — 여기서 골라야 삭제 확인 모달이 뜬다.
+          카드에 hover transform이 있어 fixed 위치가 어긋나지 않게 body로 포탈 */}
+      {wCtx && createPortal(
+        (() => {
+          const w = works.find(x => x.id === wCtx.id);
+          return w ? (
+            <div className="ctx-menu on" style={{ left: wCtx.x, top: wCtx.y }} onClick={e => e.stopPropagation()}>
+              <div className="ctx-ttl">{w.title}</div>
+              <button className="danger" onClick={() => { setWCtx(null); removeWork(w); }}>삭제</button>
+            </div>
+          ) : null;
+        })(),
+        document.body,
+      )}
       {lb && <Lightbox srcs={lb.srcs} index={lb.idx} onClose={() => setLb(null)} />}
       {del.element}
     </section>
