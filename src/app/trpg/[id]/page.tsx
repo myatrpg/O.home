@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useHrefBlock } from '@/components/shell/MenuGuard';
-import { sectionHref, MAIN_SEC, secStamp } from '@/lib/sectionStore';
+import { sectionHref, MAIN_SEC, secStamp, useSectionTitle } from '@/lib/sectionStore';
 import { useAuth } from '@/lib/auth';
 import { useLocalList } from '@/lib/postStore';
 import { TrpgLog, TRPG_SEED, TrpgLogBody, TRPG_BODY_SEED, bodyVisibility, showAsHtml, decodeLogText, logNo, saveLogBody } from '@/lib/galleryStore';
@@ -60,6 +60,8 @@ export default function TrpgDetailPage() {
      글 주소에는 섹션이 없어 MenuGuard가 못 막는다 — 글을 읽어 소속을 알아낸 여기서 판정한다.
      **다른 early return보다 먼저 불러야 한다**(훅이므로 렌더마다 개수가 같아야 한다) */
   const blocked = useHrefBlock(l && sectionHref('trpg', l.secId ?? MAIN_SEC));
+  // 큰 글씨 — 추가 섹션이면 그 이름, 눌렀을 때도 그 목록으로 (v2.0 사용자 제보)
+  const tt = useSectionTitle('trpg', l?.secId, 'TRPG LOG');
   const bd = bodies.find(x => x.id === id);   // 분리 저장된 본문 — 권한이 없으면 애초에 안 온다 (undefined)
 
   // 접근권한 (4.3) — 관리자 / 공개범위 충족 / 비밀번호 입력자 /
@@ -241,7 +243,7 @@ export default function TrpgDetailPage() {
     return (
       <section className="page">
         {/* 안내 문구는 환경설정 > TRPG에서 수정 — 관리자는 이 화면을 볼 수 없다 */}
-        <div className="page-head"><PageTitle>TRPG LOG</PageTitle>
+        <div className="page-head"><PageTitle href={tt.href}>{tt.title}</PageTitle>
           <EditableDesc k="trpg-lock-desc" def="비밀번호를 입력하면 열람할 수 있습니다" always /></div>
         <div className="panel" style={{ maxWidth: 420, margin: '0 auto', padding: 26, display: 'grid', gap: 10 }}>
           <KInput type="password" placeholder="비밀번호" value={pwTry} onChange={e => setPwTry(e.target.value)}
@@ -319,7 +321,7 @@ html,body{margin:0!important;padding:0!important;height:auto!important;min-heigh
   return (
     <section className="page">
       <div className="page-head">
-        <PageTitle>TRPG LOG</PageTitle>
+        <PageTitle href={tt.href}>{tt.title}</PageTitle>
         <p>{logNo(l)}{[l.writer, l.withText].filter(Boolean).map(x => ` · ${x}`).join('')}{l.date ? ` · ${l.date.replace(/-/g, '.')}` : ''}</p>
         <div className="head-actions">
           {rel && <button className="btn btn-dark" onClick={() => router.push(`/rels/${rel.id}`)}>{rel.name} ›</button>}
@@ -567,7 +569,7 @@ html,body{margin:0!important;padding:0!important;height:auto!important;min-heigh
           { label: 'DELETE', kind: 'accent', onClick: () => {
             setLogs(logs.filter(x => x.id !== l.id));
             setBodies(bodies.filter(x => x.id !== l.id));   // 분리 저장된 본문도 함께 삭제 (v2.0)
-            router.push('/trpg');
+            router.push(tt.href);
           } },
           { label: 'CANCEL', kind: 'ghost', onClick: () => setDelAsk(false) },
         ]} />

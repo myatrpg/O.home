@@ -153,6 +153,19 @@ export function useSectionParam(kind: SectionKind): { id: string; name: string; 
   return { id: found.id, name: found.name, items };
 }
 
+/** 상세·작성 페이지의 큰 글씨 + 큰 글씨를 눌렀을 때 돌아갈 주소 (v2.0 사용자 제보 —
+ *  추가 섹션의 상세로 가면 원래 페이지 제목(CHARACTERS 등)이 떴고, 눌러도 리스트로 안 갔다).
+ *  추가 섹션이면 그 이름을, 기본 섹션이면 def(페이지 원래 제목)를 준다.
+ *  PageTitle에 href로 함께 넘기면 메뉴 관리에서 정한 타이틀·이름이 이보다 우선한다. */
+export function useSectionTitle(
+  kind: SectionKind, secId: string | undefined, def: string,
+): { title: string; href: string } {
+  const { list } = useSections();
+  const id = secId ?? MAIN_SEC;
+  const name = id === MAIN_SEC ? null : list(kind).find(s => s.id === id)?.name;
+  return { title: name || def, href: sectionHref(kind, id) };
+}
+
 /** 목록에서 이 섹션 것만 (v2.0) — 예전 데이터는 전부 기본 섹션 소속 */
 export function filterSection<T extends { secId?: string }>(rows: T[], cur: string): T[] {
   return rows.filter(r => inSection(r.secId, cur));
