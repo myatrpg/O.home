@@ -5,6 +5,7 @@ import React, { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
 import { useMenuSettings, pageTitleFor, menuLabelOf } from '@/lib/menuStore';
+import { canonSecKey } from '@/lib/sectionStore';
 import { refreshPage } from '@/lib/pageRefresh';
 import { getRawSetting, setSetting } from '@/lib/settingStore';
 
@@ -27,7 +28,10 @@ export function PageTitle({ children, href, style }: {
   const [search, setSearch] = useState('');
   useEffect(() => { setSearch(window.location.search); });
   const q = new URLSearchParams(search);
-  const sq = q.get('s');
+  // ?s=는 별명(slug)으로 통일해 찾는다 (v2.0 사용자 제보) — 메뉴에는 별명 주소가 적혀 있는데
+  // 글쓰기 취소 등 코드가 만든 이동은 id 주소여서, 같은 페이지인데 타이틀을 못 찾았다
+  const sq0 = q.get('s');
+  const sq = sq0 ? canonSecKey(pathname, sq0) : sq0;
   const bq = q.get('b');
   const full = pathname + (sq ? `?s=${sq}` : bq ? `?b=${bq}` : '');
   const target = href ?? (full || `/${pathname.split('/')[1] ?? ''}`);

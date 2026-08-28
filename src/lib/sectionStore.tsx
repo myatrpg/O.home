@@ -189,8 +189,22 @@ export function sectionSetter<T extends { secId?: string }>(
   };
 }
 
-/** 새로 만들기 페이지로 넘길 때 지금 섹션을 달고 간다 — 기본 섹션이면 아무것도 안 붙인다 */
-export const secQuery = (id: string) => (id === MAIN_SEC ? '' : `?s=${id}`);
+/** 새로 만들기 페이지로 넘길 때 지금 섹션을 달고 간다 — 기본 섹션이면 아무것도 안 붙인다.
+ *  **별명(slug)을 정했으면 별명으로** (v2.0 사용자 제보) — 메뉴 주소는 별명인데 여기서 만든
+ *  주소만 id면, 같은 페이지인데 주소 문자열이 달라 메뉴 타이틀·이름 찾기가 전부 빗나간다. */
+export const secQuery = (kind: SectionKind, id: string) =>
+  (id === MAIN_SEC ? '' : `?s=${secKeyOf(kind, id)}`);
+
+/** 주소의 ?s= 값을 그 섹션의 대표 표기(별명 우선)로 통일 (v2.0 사용자 제보).
+ *  옛 공유 주소·구버전이 만든 id 주소로 들어와도 메뉴 타이틀·이름이 제대로 잡히게 —
+ *  pathname이 섹션 목록 페이지가 아니면 받은 값을 그대로 돌려준다. */
+export function canonSecKey(pathname: string, key: string): string {
+  const kind = SECTION_KINDS.find(k => SECTION_META[k].href === pathname);
+  if (!kind) return key;
+  load();
+  const hit = (cache[kind] ?? []).find(s => s.id === key || (s.slug ?? '') === key);
+  return hit ? (hit.slug?.trim() || hit.id) : key;
+}
 
 /** 새 항목에 찍을 소속 — 기본 섹션은 표시를 남기지 않는다(예전 데이터와 같은 모습) */
 export const secStamp = (id: string): { secId?: string } => (id === MAIN_SEC ? {} : { secId: id });

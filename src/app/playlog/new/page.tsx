@@ -32,11 +32,11 @@ function PlaylogNewPageInner() {
     <section className="page">
       <div className="page-head"><PageTitle href={tt.href}>{tt.title}</PageTitle><EditableDesc k="playlog-new-desc" def="플레이기록 추가" /></div>
       <PlaylogForm initial={null} records={records}
-        onCancel={() => router.push('/playlog' + secQuery(sec.id))}
+        onCancel={() => router.push('/playlog' + secQuery('playlog', sec.id))}
         onSave={v => {
           setRecords([...records, { id: newId(), ...v, ...secStamp(sec.id) }]);
           toast('기록이 추가되었습니다');
-          router.push('/playlog' + secQuery(sec.id));
+          router.push('/playlog' + secQuery('playlog', sec.id));
         }} />
     </section>
   );

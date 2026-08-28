@@ -263,7 +263,7 @@ function ThreadsPageInner() {
           <SearchBar onSearch={setQ} />
           {isAdmin && (
             <button className="btn btn-dark" style={{ whiteSpace: 'nowrap' }}
-              onClick={() => router.push('/threads/new' + secQuery(sec.id))}>＋ NEW THREAD</button>
+              onClick={() => router.push('/threads/new' + secQuery('threads', sec.id))}>＋ NEW THREAD</button>
           )}
         </div>
       </div>

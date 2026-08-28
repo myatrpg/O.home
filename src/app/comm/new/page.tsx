@@ -33,7 +33,7 @@ function CommNewPageInner() {
     <section className="page">
       <div className="page-head"><PageTitle href={tt.href}>{tt.title}</PageTitle><EditableDesc k="comm-new-desc" def="커미션 등록" /></div>
       <CommForm initial={null} settings={settings}
-        onCancel={() => router.push('/comm' + secQuery(sec.id))}
+        onCancel={() => router.push('/comm' + secQuery('comm', sec.id))}
         onSave={v => {
           const c: CommItem = { id: newId(), ...v, ph: 'cool', date: new Date().toISOString() };
           setItems([{ ...c, ...secStamp(sec.id) }, ...items]);

@@ -36,8 +36,8 @@ function CharNewInner() {
       </div>
       <CharEditForm
         initial={null}
-        existingIds={chars.map(c => c.id)}
-        onCancel={() => router.push('/chars' + secQuery(sec.id))}
+        existingIds={chars.flatMap(c => [c.id, ...(c.slug ? [c.slug] : [])])}
+        onCancel={() => router.push('/chars' + secQuery('chars', sec.id))}
         onSave={c => {
           setChars([...chars, { ...c, ...secStamp(sec.id) }]);
           toast('캐릭터가 등록되었습니다');

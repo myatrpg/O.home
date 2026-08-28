@@ -32,14 +32,14 @@ function DotoriNewPageInner() {
     <section className="page">
       <div className="page-head"><PageTitle href={tt.href}>{tt.title}</PageTitle><EditableDesc k="dotori-new-desc" def="가고 싶은 시나리오 등록" /></div>
       <DotoriForm initial={null}
-        onCancel={() => router.push('/dotori' + secQuery(sec.id))}
+        onCancel={() => router.push('/dotori' + secQuery('dotori', sec.id))}
         onSave={v => {
           const it: DotoriItem = {
             id: newId(), ...v, link: v.link, ph: 'cool', date: new Date().toISOString(),
           };
           setItems([{ ...it, ...secStamp(sec.id) }, ...items]);
           toast('도토리가 등록되었습니다');
-          router.push('/dotori' + secQuery(sec.id));
+          router.push('/dotori' + secQuery('dotori', sec.id));
         }} />
     </section>
   );
